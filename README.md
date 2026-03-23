@@ -96,7 +96,7 @@ cd SentimentPulse
 
 # Create virtual environment (recommended)
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scriptsctivate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -393,7 +393,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 **Built by Himal Badu, AI Founder**
 
-[![LinkedIn](https://img.shields.io/badge/-LinkedIn-0077B5?style=flat&logo=linkedin)](https://linkedin.com/in/himal-badu)
+[![LinkedIn](https://img.shields.io/badge/-LinkedIn-0077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/himal-badu)
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?style=flat&logo=github)](https://github.com/Himal-Badu)
 [![Twitter](https://img.shields.io/badge/-Twitter-1DA1F2?style=flat&logo=twitter)](https://twitter.com)
 
