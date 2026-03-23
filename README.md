@@ -395,19 +395,3 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 [![LinkedIn](https://img.shields.io/badge/-LinkedIn-0077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/himal-badu)
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?style=flat&logo=github)](https://github.com/Himal-Badu)
-[![Twitter](https://img.shields.io/badge/-Twitter-1DA1F2?style=flat&logo=twitter)](https://twitter.com)
-
-*Building the future of AI, one commit at a time.*
-
-</div>
-
----
-
-<div align="center">
-
-[![Star](https://img.shields.io/badge/If_you_use_it-★_it-blue?style=for-the-badge)](https://github.com/Himal-Badu/SentimentPulse/stargazers)
-[![Sponsor](https://img.shields.io/badge/Sponsor-❤️_this_project-red?style=for-the-badge)](https://github.com/sponsors/Himal-Badu)
-
-*If you find SentimentPulse useful, please consider giving it a star!*
-
-</div>
