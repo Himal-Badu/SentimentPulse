@@ -23,6 +23,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 from rich.live import Live
 from rich import box
+from rich.style import Style
 
 from loguru import logger
 from sentimentpulse import get_engine, analyze_sentiment, analyze_batch
@@ -262,6 +263,53 @@ def info():
         
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
+
+
+@cli.command()
+def clear_cache():
+    """Clear the sentiment cache."""
+    try:
+        engine = get_engine()
+        cache_size = len(engine._cache._cache)
+        
+        engine._cache.clear()
+        
+        console.print(f"[bold green]Cache cleared![/bold green] (Previously {cache_size} items)")
+        
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+
+
+@cli.command()
+def serve():
+    """Start the API server."""
+    console.print("[bold]Starting SentimentPulse API server...[/bold]")
+    console.print("[dim]Visit http://localhost:8000/docs for interactive documentation[/dim]\n")
+    
+    import uvicorn
+    
+    try:
+        uvicorn.run(
+            "api.main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=False,
+            log_level="info"
+        )
+    except KeyboardInterrupt:
+        console.print("\n[bold cyan]Server stopped.[/bold cyan]")
+
+
+@cli.command()
+def version():
+    """Show version information."""
+    console.print(Panel(
+        "[bold cyan]SentimentPulse[/bold cyan]\n"
+        "Version: 2.0.0\n"
+        "Built by Himal Badu, AI Founder\n\n"
+        "[dim]Powered by transformer models[/dim]",
+        box=box.ROUNDED
+    ))
 
 
 # ============================================================================
