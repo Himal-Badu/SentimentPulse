@@ -1,0 +1,24 @@
+# SentimentPulse API-only requirements
+# Install only what's needed for API server
+# Built by Himal Badu, AI Founder
+
+# API
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# Rate limiting
+slowapi>=0.1.8
+redis>=5.0.0
+
+# Logging & Monitoring
+loguru>=0.7.0
+sentry-sdk[fastapi]>=1.38.0
+
+# ML - for model loading
+transformers>=4.35.0
+torch>=2.0.0
+numpy>=1.24.0
+cachetools>=5.3.0
