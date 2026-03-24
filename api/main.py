@@ -12,7 +12,7 @@ A high-performance FastAPI application with:
 """
 
 import os
-import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -24,45 +24,51 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings
 from loguru import logger
-import redis.asyncio as redis
 
-from sentimentpulse import get_engine, analyze_sentiment, analyze_batch
+from sentimentpulse import get_engine
+from sentimentpulse.engine import SentimentEngine
+from api.models import (
+    AnalyzeRequest,
+    BatchAnalyzeRequest,
+    AnalyzeResponse,
+    BatchAnalyzeResponse,
+    HealthResponse,
+    ErrorResponse,
+    RootResponse,
+    CacheStatsResponse,
+    CacheClearResponse,
+    ModelInfo,
+    APIInfo,
+)
 
 
 # ============================================================================
 # Configuration
 # ============================================================================
 
-class AppConfig(BaseSettings):
-    """Application configuration."""
-    # API Settings
-    API_TITLE: str = "SentimentPulse API"
-    API_VERSION: str = "2.0.0"
-    API_DESCRIPTION: str = "Production-grade sentiment analysis API powered by transformers"
-    
-    # Server Settings
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
-    
-    # Rate Limiting
-    RATE_LIMIT_ENABLED: bool = True
-    REDIS_URL: Optional[str] = None
-    
-    # Caching
-    CACHE_ENABLED: bool = True
-    
-    # Monitoring
-    SENTRY_DSN: Optional[str] = None
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+# API Configuration
+API_TITLE = os.getenv("API_TITLE", "SentimentPulse API")
+API_VERSION = os.getenv("API_VERSION", "2.0.0")
+API_DESCRIPTION = os.getenv(
+    "API_DESCRIPTION",
+    "Production-grade sentiment analysis API powered by transformers"
+)
 
+# Server Settings
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8000"))
 
-config = AppConfig()
+# Rate Limiting
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
+BATCH_RATE_LIMIT_PER_MINUTE = int(os.getenv("BATCH_RATE_LIMIT_PER_MINUTE", "20"))
+
+# Caching
+CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+
+# CORS
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 
 
 # ============================================================================
@@ -71,7 +77,6 @@ config = AppConfig()
 
 def get_client_ip(request: Request) -> str:
     """Get client IP for rate limiting."""
-    # Check for forwarded headers (reverse proxy)
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         return forwarded.split(",")[0].strip()
@@ -82,19 +87,19 @@ limiter = Limiter(key_func=get_client_ip)
 
 
 # ============================================================================
-# Logging Setup
+# Monitoring Setup
 # ============================================================================
 
 def setup_monitoring():
     """Setup monitoring and error tracking."""
-    # Sentry integration
-    if config.SENTRY_DSN:
-        import sentry_sdk
-        from sentry_sdk.integrations.fastapi import FastApiIntegration
-        from sentry_sdk.integrations.loguru import LoguruIntegration
-        
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.loguru import LoguruIntegration
+    
+    sentry_dsn = os.getenv("SENTRY_DSN")
+    if sentry_dsn:
         sentry_sdk.init(
-            dsn=config.SENTRY_DSN,
+            dsn=sentry_dsn,
             integrations=[
                 FastApiIntegration(),
                 LoguruIntegration(),
@@ -106,97 +111,6 @@ def setup_monitoring():
 
 
 # ============================================================================
-# Request/Response Models
-# ============================================================================
-
-class AnalyzeRequest(BaseModel):
-    """Request model for single text analysis."""
-    text: str = Field(
-        ...,
-        min_length=1,
-        max_length=10000,
-        description="Text to analyze for sentiment",
-        examples=["I love this product! It's amazing and works perfectly."]
-    )
-    verbose: bool = Field(
-        default=False,
-        description="Include detailed model scores in response"
-    )
-    use_cache: bool = Field(
-        default=True,
-        description="Use caching for this request"
-    )
-    
-    @field_validator('text')
-    @classmethod
-    def validate_text(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Text cannot be empty or whitespace only")
-        return v.strip()
-
-
-class BatchAnalyzeRequest(BaseModel):
-    """Request model for batch analysis."""
-    texts: List[str] = Field(
-        ...,
-        min_length=1,
-        max_length=500,
-        description="List of texts to analyze",
-        examples=[["I love this!", "This is terrible.", "It's okay."]]
-    )
-    verbose: bool = Field(
-        default=False,
-        description="Include detailed model scores in response"
-    )
-    use_cache: bool = Field(
-        default=True,
-        description="Use caching for this request"
-    )
-    
-    @field_validator('texts')
-    @classmethod
-    def validate_texts(cls, v: List[str]) -> List[str]:
-        if not v:
-            raise ValueError("Texts list cannot be empty")
-        # Filter and validate each text
-        return [t.strip() for t in v if t and t.strip()]
-
-
-class AnalyzeResponse(BaseModel):
-    """Response model for sentiment analysis."""
-    sentiment: str = Field(..., description="Sentiment: positive, negative, or neutral")
-    score: float = Field(..., description="Normalized sentiment score (-1 to 1)")
-    confidence: float = Field(..., description="Model confidence (0 to 1)")
-    model: str = Field(..., description="Model used for analysis")
-    analyzed_at: str = Field(..., description="Timestamp of analysis")
-    raw_scores: Optional[Dict[str, Any]] = Field(default=None, description="Detailed model scores")
-
-
-class BatchAnalyzeResponse(BaseModel):
-    """Response model for batch analysis."""
-    results: List[AnalyzeResponse] = Field(..., description="Analysis results")
-    total: int = Field(..., description="Total number of texts analyzed")
-    processed_at: str = Field(..., description="Processing timestamp")
-    processing_time_ms: Optional[float] = Field(default=None, description="Processing time")
-
-
-class HealthResponse(BaseModel):
-    """Response model for health check."""
-    status: str
-    version: str
-    model_loaded: bool
-    model_name: str
-    cache_stats: Optional[Dict[str, Any]] = None
-
-
-class ErrorResponse(BaseModel):
-    """Response model for errors."""
-    error: str
-    detail: Optional[str] = None
-    timestamp: str
-
-
-# ============================================================================
 # API Application
 # ============================================================================
 
@@ -205,7 +119,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     logger.info("Starting SentimentPulse API...")
-    setup_monitoring()
+    
+    if os.getenv("SENTRY_DSN"):
+        setup_monitoring()
     
     # Pre-load the model in background
     import threading
@@ -227,9 +143,9 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title=config.API_TITLE,
-    version=config.API_VERSION,
-    description=config.API_DESCRIPTION,
+    title=API_TITLE,
+    version=API_VERSION,
+    description=API_DESCRIPTION,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -247,7 +163,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -279,15 +195,15 @@ async def log_requests(request: Request, call_next):
 # API Routes
 # ============================================================================
 
-@app.get("/", tags=["Root"])
+@app.get("/", response_model=RootResponse, tags=["Root"])
 async def root():
     """Root endpoint."""
-    return {
-        "name": "SentimentPulse API",
-        "version": config.API_VERSION,
-        "docs": "/docs",
-        "health": "/health"
-    }
+    return RootResponse(
+        name="SentimentPulse API",
+        version=API_VERSION,
+        docs="/docs",
+        health="/health"
+    )
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
@@ -299,10 +215,10 @@ async def health_check():
         
         return HealthResponse(
             status="healthy",
-            version=config.API_VERSION,
+            version=API_VERSION,
             model_loaded=health["model_loaded"],
             model_name=health["model_name"],
-            cache_stats=health["cache"] if config.CACHE_ENABLED else None
+            cache_stats=health["cache"] if CACHE_ENABLED else None
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -312,8 +228,42 @@ async def health_check():
         )
 
 
+@app.get("/api/v1/model", response_model=ModelInfo, tags=["Model"])
+async def model_info():
+    """Get model information."""
+    try:
+        engine = get_engine()
+        health = engine.health_check()
+        
+        return ModelInfo(
+            model_name=health["model_name"],
+            model_type="RoBERTa",
+            max_length=512,
+            device=health["device"],
+            loaded=health["model_loaded"]
+        )
+    except Exception as e:
+        logger.error(f"Model info error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/info", response_model=APIInfo, tags=["Info"])
+async def api_info():
+    """Get API information."""
+    return APIInfo(
+        name=API_TITLE,
+        version=API_VERSION,
+        description=API_DESCRIPTION,
+        documentation="https://github.com/Himal-Badu/SentimentPulse#readme",
+        repository="https://github.com/Himal-Badu/SentimentPulse"
+    )
+
+
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse, tags=["Analysis"])
-@limiter.limit("60/minute" if config.RATE_LIMIT_ENABLED else "99999/minute")
+@limiter.limit(f"{RATE_LIMIT_PER_MINUTE}/minute" if RATE_LIMIT_ENABLED else "99999/minute")
 async def analyze_text(request: Request, body: AnalyzeRequest):
     """
     Analyze sentiment of a single text.
@@ -345,14 +295,9 @@ async def analyze_text(request: Request, body: AnalyzeRequest):
 
 
 @app.post("/api/v1/analyze/batch", response_model=BatchAnalyzeResponse, tags=["Analysis"])
-@limiter.limit("20/minute" if config.RATE_LIMIT_ENABLED else "99999/minute")
+@limiter.limit(f"{BATCH_RATE_LIMIT_PER_MINUTE}/minute" if RATE_LIMIT_ENABLED else "99999/minute")
 async def analyze_batch_texts(request: Request, body: BatchAnalyzeRequest):
-    """
-    Analyze sentiment of multiple texts.
-    
-    Efficiently processes up to 500 texts in a single request.
-    Returns array of results with metadata.
-    """
+    """Analyze sentiment of multiple texts."""
     start_time = datetime.utcnow()
     
     try:
@@ -375,7 +320,8 @@ async def analyze_batch_texts(request: Request, body: BatchAnalyzeRequest):
             results=[AnalyzeResponse(**r) for r in results],
             total=len(results),
             processed_at=datetime.utcnow().isoformat(),
-            processing_time_ms=round(process_time, 2)
+            processing_time_ms=round(process_time, 2),
+            cached=False
         )
         
     except Exception as e:
@@ -386,25 +332,41 @@ async def analyze_batch_texts(request: Request, body: BatchAnalyzeRequest):
         )
 
 
-@app.get("/api/v1/cache/stats", tags=["Cache"])
+@app.get("/api/v1/cache/stats", response_model=CacheStatsResponse, tags=["Cache"])
 async def cache_stats():
     """Get cache statistics."""
-    if not config.CACHE_ENABLED:
-        return {"message": "Cache is disabled"}
+    if not CACHE_ENABLED:
+        return CacheStatsResponse(
+            hits=0,
+            misses=0,
+            size=0,
+            hit_rate_percent=0.0
+        )
     
     engine = get_engine()
-    return engine.get_cache_stats()
+    stats = engine.get_cache_stats()
+    
+    return CacheStatsResponse(**stats)
 
 
-@app.delete("/api/v1/cache", tags=["Cache"])
+@app.delete("/api/v1/cache", response_model=CacheClearResponse, tags=["Cache"])
 async def clear_cache():
     """Clear the sentiment analysis cache."""
-    if not config.CACHE_ENABLED:
-        return {"message": "Cache is disabled"}
+    if not CACHE_ENABLED:
+        return CacheClearResponse(
+            message="Cache is disabled",
+            previous_size=None
+        )
     
     engine = get_engine()
+    previous_size = len(engine._cache._cache)
+    
     engine._cache.clear()
-    return {"message": "Cache cleared successfully"}
+    
+    return CacheClearResponse(
+        message="Cache cleared successfully",
+        previous_size=previous_size
+    )
 
 
 # ============================================================================
@@ -434,8 +396,8 @@ if __name__ == "__main__":
     
     uvicorn.run(
         "api.main:app",
-        host=config.HOST,
-        port=config.PORT,
+        host=HOST,
+        port=PORT,
         reload=os.getenv("ENVIRONMENT") == "development",
         workers=int(os.getenv("WORKERS", "1")),
         log_level="info"
