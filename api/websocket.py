@@ -1,218 +1,240 @@
 """
-SentimentPulse - WebSocket support for real-time analysis
+SentimentPulse - WebSocket API for real-time streaming
 Built by Himal Badu, AI Founder
+
+WebSocket endpoint for real-time sentiment analysis with streaming support.
 """
 
-from typing import Optional, List, Dict, Any
-from datetime import datetime
-from enum import Enum
-
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException
-from pydantic import BaseModel, Field
-import json
 import asyncio
+import json
+from typing import Dict, Any, List
+from datetime import datetime
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from loguru import logger
+
+from sentimentpulse import get_engine
+from sentimentpulse.utils import validate_text_input
 
 
 # WebSocket connection manager
 class ConnectionManager:
-    """Manage WebSocket connections."""
+    """Manages WebSocket connections."""
     
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: Dict[str, WebSocket] = {}
     
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, client_id: str):
         """Accept and track new WebSocket connection."""
         await websocket.accept()
-        self.active_connections.append(websocket)
+        self.active_connections[client_id] = websocket
+        logger.info(f"WebSocket client connected: {client_id}")
     
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, client_id: str):
         """Remove WebSocket connection."""
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+        if client_id in self.active_connections:
+            del self.active_connections[client_id]
+            logger.info(f"WebSocket client disconnected: {client_id}")
     
-    async def send_personal_message(self, message: Dict, websocket: WebSocket):
+    async def send_message(self, message: Dict[str, Any], client_id: str):
         """Send message to specific client."""
-        try:
-            await websocket.send_json(message)
-        except Exception:
-            self.disconnect(websocket)
+        if client_id in self.active_connections:
+            await self.active_connections[client_id].send_json(message)
     
-    async def broadcast(self, message: Dict):
+    async def broadcast(self, message: Dict[str, Any]):
         """Broadcast message to all connected clients."""
-        for connection in self.active_connections:
+        for client_id in list(self.active_connections.keys()):
             try:
-                await connection.send_json(message)
-            except Exception:
-                self.disconnect(connection)
+                await self.send_message(message, client_id)
+            except Exception as e:
+                logger.error(f"Error broadcasting to {client_id}: {e}")
+                self.disconnect(client_id)
 
 
-# Create manager and router
-ws_manager = ConnectionManager()
-ws_router = APIRouter()
+# Global connection manager
+manager = ConnectionManager()
+
+# WebSocket router
+router = APIRouter()
 
 
-# Request/Response models for WebSocket
-class WSAnalyzeRequest(BaseModel):
-    """WebSocket request for analysis."""
-    text: str = Field(..., min_length=1, max_length=10000)
-    request_id: Optional[str] = Field(None, description="Request identifier")
-    use_cache: bool = Field(True, description="Use caching")
-    verbose: bool = Field(False, description="Include detailed scores")
-
-
-class WSAnalyzeResponse(BaseModel):
-    """WebSocket response for analysis."""
-    request_id: Optional[str] = None
-    sentiment: str
-    score: float
-    confidence: float
-    model: str
-    analyzed_at: str
-    raw_scores: Optional[Dict[str, Any]] = None
-
-
-class WSBatchRequest(BaseModel):
-    """WebSocket request for batch analysis."""
-    texts: List[str] = Field(..., min_length=1, max_length=100)
-    request_id: Optional[str] = None
-    use_cache: bool = True
-    verbose: bool = False
-
-
-class WSMessage(BaseModel):
-    """Base WebSocket message."""
-    type: str = Field(..., description="Message type")
-    data: Dict[str, Any] = Field(default_factory=dict)
-    error: Optional[str] = None
-
-
-# WebSocket endpoints
-@ws_router.websocket("/ws/analyze")
+@router.websocket("/ws/analyze")
 async def websocket_analyze(websocket: WebSocket):
-    """WebSocket endpoint for real-time sentiment analysis."""
-    await ws_manager.connect(websocket)
+    """
+    WebSocket endpoint for real-time sentiment analysis.
+    
+    Clients send text messages and receive analysis results in real-time.
+    """
+    import uuid
+    
+    client_id = str(uuid.uuid4())[:8]
+    await manager.connect(websocket, client_id)
     
     try:
+        # Send welcome message
+        await manager.send_message({
+            "type": "connected",
+            "client_id": client_id,
+            "message": "Connected to SentimentPulse WebSocket"
+        }, client_id)
+        
+        # Ensure model is loaded
+        engine = get_engine()
+        if not engine._model_loaded:
+            await manager.send_message({
+                "type": "status",
+                "message": "Loading model..."
+            }, client_id)
+            engine.load_model()
+            await manager.send_message({
+                "type": "status",
+                "message": "Model loaded"
+            }, client_id)
+        
+        # Handle incoming messages
         while True:
-            # Receive message
             data = await websocket.receive_text()
             
             try:
-                request_data = json.loads(data)
-            except json.JSONDecodeError:
-                await ws_manager.send_personal_message({
-                    "type": "error",
-                    "error": "Invalid JSON",
-                    "data": {}
-                }, websocket)
-                continue
-            
-            # Handle different message types
-            msg_type = request_data.get("type", "analyze")
-            
-            if msg_type == "analyze":
-                # Single text analysis
-                text = request_data.get("text", "")
-                use_cache = request_data.get("use_cache", True)
-                verbose = request_data.get("verbose", False)
-                request_id = request_data.get("request_id")
+                # Parse incoming data
+                message = json.loads(data)
                 
-                if not text:
-                    await ws_manager.send_personal_message({
+                # Support both simple text and structured messages
+                if isinstance(message, dict):
+                    text = message.get("text", "")
+                    request_id = message.get("request_id", str(uuid.uuid4())[:8])
+                else:
+                    text = str(message)
+                    request_id = str(uuid.uuid4())[:8]
+                
+                # Validate input
+                is_valid, error = validate_text_input(text)
+                if not is_valid:
+                    await manager.send_message({
                         "type": "error",
-                        "error": "Text is required",
-                        "request_id": request_id
-                    }, websocket)
+                        "request_id": request_id,
+                        "error": error
+                    }, client_id)
                     continue
                 
-                # Analyze
-                from sentimentpulse import analyze_sentiment
-                result = analyze_sentiment(text, use_cache=use_cache, verbose=verbose)
+                # Analyze sentiment
+                result = engine.analyze(text)
                 
-                # Send response
-                await ws_manager.send_personal_message({
+                # Send result
+                await manager.send_message({
                     "type": "result",
                     "request_id": request_id,
-                    "data": result
-                }, websocket)
-            
-            elif msg_type == "batch":
-                # Batch analysis
-                texts = request_data.get("texts", [])
-                request_id = request_data.get("request_id")
+                    "sentiment": result["sentiment"],
+                    "score": result["score"],
+                    "confidence": result["confidence"],
+                    "model": result["model"],
+                    "analyzed_at": result["analyzed_at"]
+                }, client_id)
                 
-                if not texts:
-                    await ws_manager.send_personal_message({
+            except json.JSONDecodeError:
+                # Treat plain text as sentiment request
+                is_valid, error = validate_text_input(data)
+                if not is_valid:
+                    await manager.send_message({
                         "type": "error",
-                        "error": "Texts array is required",
-                        "request_id": request_id
-                    }, websocket)
+                        "error": error
+                    }, client_id)
                     continue
                 
-                # Send processing status
-                await ws_manager.send_personal_message({
-                    "type": "status",
-                    "message": f"Processing {len(texts)} texts...",
-                    "request_id": request_id
-                }, websocket)
-                
-                # Analyze batch
-                from sentimentpulse import analyze_batch
-                results = analyze_batch(texts, use_cache=True, verbose=False)
-                
-                # Send results
-                await ws_manager.send_personal_message({
-                    "type": "batch_result",
-                    "request_id": request_id,
-                    "data": {
-                        "results": results,
-                        "total": len(results)
-                    }
-                }, websocket)
-            
-            elif msg_type == "ping":
-                # Keepalive ping
-                await ws_manager.send_personal_message({
-                    "type": "pong",
-                    "timestamp": datetime.utcnow().isoformat()
-                }, websocket)
-            
-            else:
-                await ws_manager.send_personal_message({
-                    "type": "error",
-                    "error": f"Unknown message type: {msg_type}",
-                    "request_id": request_data.get("request_id")
-                }, websocket)
+                result = engine.analyze(data)
+                await manager.send_message({
+                    "type": "result",
+                    "sentiment": result["sentiment"],
+                    "score": result["score"],
+                    "confidence": result["confidence"]
+                }, client_id)
     
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
+        manager.disconnect(client_id)
     except Exception as e:
-        await ws_manager.send_personal_message({
+        logger.error(f"WebSocket error for {client_id}: {e}")
+        await manager.send_message({
             "type": "error",
             "error": str(e)
-        }, websocket)
-        ws_manager.disconnect(websocket)
+        }, client_id)
+        manager.disconnect(client_id)
 
 
-@ws_router.websocket("/ws/health")
-async def websocket_health(websocket: WebSocket):
-    """WebSocket endpoint for health status updates."""
-    await ws_manager.connect(websocket)
+@router.websocket("/ws/batch")
+async def websocket_batch(websocket: WebSocket):
+    """
+    WebSocket endpoint for batch sentiment analysis with streaming results.
+    """
+    import uuid
+    
+    client_id = str(uuid.uuid4())[:8]
+    await manager.connect(websocket, client_id)
     
     try:
-        while True:
-            # Get health status
-            from sentimentpulse.monitoring import get_health_monitor
-            monitor = get_health_monitor()
-            health = monitor.get_health_status()
+        await manager.send_message({
+            "type": "connected",
+            "client_id": client_id,
+            "message": "Connected to SentimentPulse Batch WebSocket"
+        }, client_id)
+        
+        engine = get_engine()
+        if not engine._model_loaded:
+            engine.load_model()
+        
+        # Receive batch request
+        data = await websocket.receive_text()
+        request_data = json.loads(data)
+        
+        texts = request_data.get("texts", [])
+        
+        if not texts:
+            await manager.send_message({
+                "type": "error",
+                "error": "No texts provided"
+            }, client_id)
+            return
+        
+        # Process and stream results
+        total = len(texts)
+        
+        for i, text in enumerate(texts):
+            is_valid, error = validate_text_input(text)
             
-            await ws_manager.send_personal_message({
-                "type": "health",
-                "data": health
-            }, websocket)
+            if not is_valid:
+                await manager.send_message({
+                    "type": "result",
+                    "index": i,
+                    "error": error
+                }, client_id)
+                continue
             
-            # Wait before next update
-            await asyncio.sleep(5)
+            result = engine.analyze(text)
+            await manager.send_message({
+                "type": "result",
+                "index": i,
+                "sentiment": result["sentiment"],
+                "score": result["score"],
+                "confidence": result["confidence"],
+                "progress": f"{i+1}/{total}"
+            }, client_id)
+        
+        # Send completion message
+        await manager.send_message({
+            "type": "complete",
+            "total": total
+        }, client_id)
     
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
+        manager.disconnect(client_id)
+    except Exception as e:
+        logger.error(f"WebSocket batch error for {client_id}: {e}")
+        await manager.send_message({
+            "type": "error",
+            "error": str(e)
+        }, client_id)
+        manager.disconnect(client_id)
+
+
+async def notify_all_clients(message: Dict[str, Any]):
+    """Broadcast message to all connected WebSocket clients."""
+    await manager.broadcast(message)
