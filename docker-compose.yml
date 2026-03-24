@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentimentpulse-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8000
+      - HOST=0.0.0.0
+      - LOG_LEVEL=INFO
+      - CACHE_ENABLED=true
+      - CACHE_SIZE=1000
+      - CACHE_TTL=3600
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_PER_MINUTE=60
+      - BATCH_RATE_LIMIT_PER_MINUTE=20
+      # Optional: Set SENTRY_DSN for monitoring
+      # - SENTRY_DSN=https://your-sentry-dsn
+    volumes:
+      - ./logs:/app/logs
+      - model-cache:/app/.cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Optional: Redis for distributed caching
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: sentimentpulse-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   restart: unless-stopped
+
+volumes:
+  model-cache:
+  # redis-data:
+
+networks:
+  default:
+    name: sentimentpulse-network
