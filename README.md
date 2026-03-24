@@ -5,8 +5,10 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=for-the-badge)](https://www.python.org/)
 [![API Version](https://img.shields.io/badge/version-2.0.0-green?style=for-the-badge)](https://github.com/Himal-Badu/SentimentPulse)
 [![License](https://img.shields.io/badge/license-MIT-orange?style=for-the-badge)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/Himal-Badu/SentimentPulse?style=for-the-badge&color=brightgreen)](https://github.com/Himal-Badu/SentimentPulse/stargazers)
-[![Forks](https://img.shields.io/github/forks/Himal-Badu/SentimentPulse?style=for-the-badge)](https://github.com/Himal-Badu/SentimentPulse/fork)
+[![Last Commit](https://img.shields.io/badge/last_commit-March_2026-red?style=for-the-badge)](https://github.com/Himal-Badu/SentimentPulse)
+
+![Stars](https://komarev.com/ghpvc/?username=Himal-Badu&repo=SentimentPulse&style=for-the-badge&color=brightgreen)
+[![Fork](https://img.shields.io/badge/fork_this-repo-white?style=for-the-badge&logo=github)](https://github.com/Himal-Badu/SentimentPulse/fork)
 
 **Production-grade sentiment analysis API & CLI powered by state-of-the-art transformer models**
 
@@ -48,13 +50,12 @@ SentimentPulse is a **production-ready** sentiment analysis system built for dev
 - 📝 **Type Safety** - Full Pydantic validation
 - 📈 **Monitoring** - Sentry integration for error tracking
 - 🔒 **CORS Ready** - Easy to integrate with frontend applications
-- 🔌 **WebSocket Support** - Real-time streaming analysis
 
 ### Production Ready
 - 🏗️ **Structured Logging** - Loguru with file rotation
 - ✅ **Error Handling** - Comprehensive exception handling
 - 🏥 **Health Checks** - Built-in health endpoint
-- 🐳 **Docker Ready** - Production Dockerfile included
+- 📦 **Docker Ready** - Production Dockerfile included
 - 🔧 **Environment Config** - Pydantic Settings for configuration
 
 ---
@@ -95,7 +96,7 @@ cd SentimentPulse
 
 # Create virtual environment (recommended)
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scriptsctivate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -345,12 +346,14 @@ services:
     restart: unless-stopped
 ```
 
-### Render Deployment
+### Production Deployment
 
-1. Connect your GitHub repo to Render
-2. Set build command: `pip install -r requirements.txt`
-3. Set start command: `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
-4. Add environment variables as needed
+See [DEPLOY.md](DEPLOY.md) for detailed production deployment instructions including:
+
+- Nginx reverse proxy setup
+- Systemd service configuration
+- Environment variables
+- Monitoring & alerting
 
 ---
 
@@ -390,21 +393,5 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 **Built by Himal Badu, AI Founder**
 
-[![LinkedIn](https://img.shields.io/badge/-LinkedIn-0077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/himal-badu/)
+[![LinkedIn](https://img.shields.io/badge/-LinkedIn-0077B5?style=flat&logo=linkedin)](https://www.linkedin.com/in/himal-badu)
 [![GitHub](https://img.shields.io/badge/-GitHub-181717?style=flat&logo=github)](https://github.com/Himal-Badu)
-[![Twitter](https://img.shields.io/badge/-Twitter-1DA1F2?style=flat&logo=twitter)](https://twitter.com)
-
-*Building the future of AI, one commit at a time.*
-
-</div>
-
----
-
-<div align="center">
-
-[![Star](https://img.shields.io/badge/If_you_use_it-★_it-blue?style=for-the-badge)](https://github.com/Himal-Badu/SentimentPulse/stargazers)
-[![Sponsor](https://img.shields.io/badge/Sponsor-❤️_this_project-red?style=for-the-badge)](https://github.com/sponsors/Himal-Badu)
-
-*If you find SentimentPulse useful, please consider giving it a star!*
-
-</div>
