@@ -126,3 +126,17 @@ This project is licensed under the **MIT License**.
 [![Email](https://img.shields.io/badge/-Email-D14836?style=flat&logo=gmail)](mailto:himalbaduhimalbadu@gmail.com)
 
 *Building the future of AI, one commit at a time.*
+
+## 📊 Project Stats
+
+![GitHub Stars](https://img.shields.io/github/stars/Himal-Badu/SentimentPulse)
+![GitHub Forks](https://img.shields.io/github/forks/Himal-Badu/SentimentPulse)
+![GitHub Issues](https://img.shields.io/github/issues/Himal-Badu/SentimentPulse)
+![GitHub License](https://img.shields.io/github/license/Himal-Badu/SentimentPulse)
+![Python](https://img.shields.io/badge/Python-3.9+-blue)
+
+## 🔗 Links
+
+- [Documentation](https://github.com/Himal-Badu/SentimentPulse#readme)
+- [API Reference](https://github.com/Himal-Badu/SentimentPulse/blob/master/api/main.py)
+- [Contributing](https://github.com/Himal-Badu/SentimentPulse/blob/master/CONTRIBUTING.md)
